@@ -332,19 +332,69 @@ async function send(question) {
 
   addMsg('user', esc(question));
   const bubble = addMsg('ai', `
-    <div class="thinking-line">▍retrieving · ranking · generating</div>
-    <span class="typing"><i></i><i></i><i></i></span>`);
+    <div class="thinking-line">▍retrieving · ranking</div>
+    <span class="typing"><i></i><i></i><i></i></span>
+    <div class="answer"></div>`);
+  const answerBox = bubble.querySelector('.answer');
 
   try {
-    const resp = await fetch('/api/ask', {
+    const resp = await fetch('/api/ask/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, top_k: 3 }),
     });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
-    bubble.innerHTML = markdownish(data.answer);
-    if (data.sources && data.sources.length) renderSources(bubble, data.sources);
+    if (!resp.ok) throw new Error(('HTTP ' + resp.status));
+    if (!resp.body) throw new Error('当前浏览器不支持流式读取');
+
+    // 流式读取 SSE
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let answerText = '';
+    let firstDelta = true;
+    let sources = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // 按 \n\n 切分 SSE 事件(可能跨 chunk,用缓冲拼接)
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const raw = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        if (!raw.startsWith('data: ')) continue;
+        let ev;
+        try { ev = JSON.parse(raw.slice(6)); } catch { continue; }
+
+        if (ev.type === 'sources') {
+          sources = ev.sources;
+          // 来源先到:渲染来源面板,回答继续打字
+          const line = bubble.querySelector('.thinking-line');
+          if (line) line.textContent = '▍generating · streaming';
+          if (sources && sources.length) renderSources(bubble, sources);
+        } else if (ev.type === 'delta') {
+          if (firstDelta) {
+            bubble.querySelector('.typing')?.remove();
+            bubble.querySelector('.thinking-line')?.remove();
+            firstDelta = false;
+          }
+          answerText += ev.content;
+          answerBox.textContent = answerText;   // 打字机效果(纯文本,结束后统一美化)
+          scrollBottom();
+        } else if (ev.type === 'error') {
+          throw new Error(ev.message);
+        }
+      }
+    }
+
+    // 流结束:统一渲染 markdown 样式(只重绘回答容器,来源面板保留)
+    if (firstDelta) {
+      answerBox.innerHTML = '<span class="error">✕ 未收到任何内容</span>';
+    } else {
+      answerBox.innerHTML = markdownish(answerText);
+    }
   } catch (e) {
     bubble.innerHTML = `<span class="error">✕ 请求失败: ${esc(e.message)}</span>`;
   } finally {

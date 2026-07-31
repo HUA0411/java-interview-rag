@@ -41,13 +41,9 @@ def build_prompt(question: str, hits: list[dict]) -> str:
     )
 
 
-def ask_llm(prompt: str, api_key: str = None, timeout: int = 60) -> str:
-    """调用 DeepSeek API(OpenAI 兼容协议),返回回答文本"""
-    api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
-    if not api_key:
-        raise RuntimeError("未找到 DEEPSEEK_API_KEY,请检查 .env 文件")
-
-    resp = requests.post(
+def _call_api(prompt: str, api_key: str, stream: bool, timeout: int = 60) -> requests.Response:
+    """DeepSeek API 公共调用(OpenAI 兼容协议)"""
+    return requests.post(
         API_URL,
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -57,9 +53,50 @@ def ask_llm(prompt: str, api_key: str = None, timeout: int = 60) -> str:
             "model": MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3,
-            "stream": False,
+            "stream": stream,
         },
+        stream=stream,
         timeout=timeout,
     )
+
+
+def ask_llm(prompt: str, api_key: str = None, timeout: int = 60) -> str:
+    """调用 DeepSeek API,一次性返回完整回答"""
+    api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("未找到 DEEPSEEK_API_KEY,请检查 .env 文件")
+
+    resp = _call_api(prompt, api_key, stream=False, timeout=timeout)
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
+
+
+def ask_llm_stream(prompt: str, api_key: str = None, timeout: int = 120):
+    """
+    流式调用:逐块 yield 回答增量文本(生成器)。
+    大模型不是一次性吐完,而是像打字一样逐个 token 返回,
+    SSE 格式: data: {"choices":[{"delta":{"content":"..."}}]}\n
+    """
+    api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+    if not api_key:
+        raise RuntimeError("未找到 DEEPSEEK_API_KEY,请检查 .env 文件")
+
+    resp = _call_api(prompt, api_key, stream=True, timeout=timeout)
+    resp.raise_for_status()
+
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        line = line.decode("utf-8", errors="ignore")
+        if not line.startswith("data: "):
+            continue
+        data = line[6:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            import json
+            delta = json.loads(data)["choices"][0]["delta"].get("content", "")
+        except (json.JSONDecodeError, KeyError, IndexError):
+            continue
+        if delta:
+            yield delta
