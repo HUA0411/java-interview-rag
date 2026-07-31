@@ -32,8 +32,9 @@ def build():
     print(f"加载嵌入模型 {EMBED_MODEL} ...")
     model = SentenceTransformer(EMBED_MODEL)
 
-    # 批量编码:一条文本 → 一个向量,normalize_embeddings 让相似度计算用点积即可(等价余弦)
-    texts = [c["text"] for c in chunks]
+    # 关键:标题+正文合并索引!标题通常是全文最浓缩的信息(如"HashMap 的底层原理")
+    # 若只索引正文,BM25 和向量化都会丢失专有名词,导致检索不到
+    texts = [f"{c['title']}\n{c['text']}" for c in chunks]
     print(f"编码 {len(texts)} 条文本为向量 ...")
     vectors = model.encode(texts, normalize_embeddings=True, show_progress_bar=True)
 
