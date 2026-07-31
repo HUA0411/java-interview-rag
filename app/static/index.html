@@ -1,131 +1,372 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Java 面试知识库问答</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-      background: #0f172a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column;
-    }
-    header {
-      padding: 16px 24px; background: #1e293b; border-bottom: 1px solid #334155;
-      display: flex; align-items: center; gap: 12px;
-    }
-    header h1 { font-size: 18px; font-weight: 600; }
-    header .badge {
-      font-size: 12px; color: #86efac; background: #14532d33; border: 1px solid #166534;
-      padding: 2px 10px; border-radius: 999px;
-    }
-    #chat { flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
-    .msg { max-width: 75%; padding: 12px 16px; border-radius: 12px; line-height: 1.7; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
-    .msg.user { align-self: flex-end; background: #2563eb; }
-    .msg.assistant { align-self: flex-start; background: #1e293b; border: 1px solid #334155; }
-    .msg .sources { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #475569; font-size: 12px; color: #94a3b8; }
-    .msg .sources span { background: #334155; padding: 2px 8px; border-radius: 6px; margin-right: 6px; display: inline-block; margin-top: 4px; }
-    .msg.loading { color: #94a3b8; }
-    .typing::after { content: "…"; animation: blink 1s infinite; }
-    @keyframes blink { 50% { opacity: 0; } }
-    #input-bar {
-      padding: 16px 24px; background: #1e293b; border-top: 1px solid #334155;
-      display: flex; gap: 12px;
-    }
-    #input-bar input {
-      flex: 1; padding: 12px 16px; border-radius: 10px; border: 1px solid #475569;
-      background: #0f172a; color: #e2e8f0; font-size: 14px; outline: none;
-    }
-    #input-bar input:focus { border-color: #3b82f6; }
-    #input-bar button {
-      padding: 12px 28px; border-radius: 10px; border: none; background: #2563eb;
-      color: #fff; font-size: 14px; cursor: pointer;
-    }
-    #input-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .hint { text-align: center; color: #64748b; font-size: 12px; margin-top: 4px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QueryBase · Java 面试知识库</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+/* ============ 设计基调 ============
+   概念:「示波器 / 信号分析」—— 深夜工程台
+   黑墨蓝底 + 示波器青绿荧光 + 等宽字体仪器感
+   记忆点:回答后的「来源波形卡」—— 每条来源是一条可展开的信号曲线
+   ================================ */
+:root {
+  --bg: #070b12;
+  --bg-2: #0b111c;
+  --panel: #0e1524;
+  --line: rgba(94, 234, 212, 0.12);
+  --line-strong: rgba(94, 234, 212, 0.28);
+  --ink: #e6edf3;
+  --ink-dim: #8b98ab;
+  --ink-faint: #4d5a6e;
+  --signal: #5eead4;          /* 示波器青绿 */
+  --signal-2: #34d399;
+  --signal-dim: rgba(94, 234, 212, 0.08);
+  --amber: #ffb454;           /* 仪表警告橙(点缀) */
+  --danger: #f87171;
+  --radius: 14px;
+  --mono: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--ink);
+  overflow: hidden;
+}
+/* 网格底纹 + 角部光晕 */
+.bg-grid {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(1200px 500px at 85% -10%, rgba(94, 234, 212, 0.07), transparent 60%),
+    radial-gradient(900px 400px at -10% 110%, rgba(255, 180, 84, 0.05), transparent 60%),
+    linear-gradient(rgba(94, 234, 212, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 234, 212, 0.03) 1px, transparent 1px);
+  background-size: auto, auto, 36px 36px, 36px 36px;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, black 40%, transparent 100%);
+}
+/* ============ 布局 ============ */
+.app { position: relative; z-index: 1; height: 100vh; display: flex; flex-direction: column; }
+/* 顶栏 */
+header {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 28px; height: 60px; flex-shrink: 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(7, 11, 18, 0.75); backdrop-filter: blur(8px);
+}
+.logo-mark {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  border: 1px solid var(--line-strong);
+  background: var(--signal-dim);
+  display: grid; place-items: center;
+  font-family: var(--mono); font-weight: 700; font-size: 13px; color: var(--signal);
+  box-shadow: 0 0 18px rgba(94, 234, 212, 0.15) inset;
+}
+header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.4px; }
+header h1 em { font-style: normal; color: var(--signal); }
+.chips { display: flex; gap: 8px; margin-left: 8px; }
+.chip {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.5px;
+  color: var(--ink-dim); border: 1px solid var(--line);
+  padding: 3px 9px; border-radius: 999px; background: transparent;
+}
+.stat {
+  margin-left: auto; display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-dim);
+}
+.stat .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--signal-2);
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.8); animation: pulse 2.2s infinite;
+}
+@keyframes pulse { 50% { opacity: 0.35; } }
+/* 聊天区 */
+main { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
+main::-webkit-scrollbar { width: 8px; }
+main::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 4px; }
+.thread { max-width: 780px; margin: 0 auto; padding: 28px 24px 12px; }
+/* 空状态 */
+.empty { padding: 9vh 0 4vh; text-align: center; animation: rise .5s ease-out both; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+.empty .kicker {
+  font-family: var(--mono); font-size: 11px; letter-spacing: 3px;
+  color: var(--signal); text-transform: uppercase; margin-bottom: 14px;
+}
+.empty .big { font-size: 32px; font-weight: 900; line-height: 1.35; letter-spacing: 1px; }
+.empty .big .grad {
+  background: linear-gradient(100deg, var(--signal) 20%, #7dd3fc 80%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.empty .sub { margin-top: 10px; color: var(--ink-dim); font-size: 14px; }
+.suggests {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  margin: 34px auto 0; max-width: 720px;
+}
+.sug-card {
+  text-align: left; padding: 14px 16px; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  font-family: var(--sans); font-size: 13px; color: var(--ink);
+  line-height: 1.6; position: relative; overflow: hidden;
+  transition: border-color .25s, transform .25s, box-shadow .25s;
+}
+.sug-card::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px;
+  background: var(--signal); opacity: 0; transition: opacity .25s;
+}
+.sug-card:hover {
+  border-color: var(--line-strong); transform: translateY(-2px);
+  box-shadow: 0 10px 30px -12px rgba(94, 234, 212, 0.18);
+}
+.sug-card:hover::before { opacity: 1; }
+.sug-card .idx { font-family: var(--mono); font-size: 10px; color: var(--signal); display: block; margin-bottom: 6px; }
+/* 消息 */
+.msg { display: flex; gap: 12px; margin: 22px 0; animation: rise .35s ease-out both; }
+.msg .avatar {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 12px; margin-top: 2px;
+}
+.msg.user .avatar { background: var(--signal-dim); border: 1px solid var(--line-strong); color: var(--signal); font-family: var(--mono); font-weight: 700; }
+.msg.ai .avatar { background: rgba(255, 180, 84, 0.1); border: 1px solid rgba(255, 180, 84, 0.3); color: var(--amber); font-family: var(--mono); font-weight: 700; }
+.bubble { flex: 1; min-width: 0; }
+.msg.user .bubble {
+  background: linear-gradient(135deg, rgba(94, 234, 212, 0.10), rgba(125, 211, 252, 0.07));
+  border: 1px solid var(--line-strong);
+  padding: 11px 16px; border-radius: 4px 16px 16px 16px;
+  font-size: 14.5px; line-height: 1.75;
+}
+.msg.ai .bubble {
+  background: var(--panel); border: 1px solid var(--line);
+  padding: 16px 18px; border-radius: 4px 16px 16px 16px;
+  font-size: 14.5px; line-height: 1.85; color: #dbe4ee;
+}
+.msg.ai .bubble::first-letter { }
+.msg.ai .bubble strong { color: var(--signal-2); font-weight: 600; }
+.msg.ai .bubble code, .msg.ai .bubble pre {
+  font-family: var(--mono); font-size: 12.5px; background: rgba(94, 234, 212, 0.07);
+  border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; color: #a7f3d0;
+}
+.msg.ai .bubble pre { display: block; padding: 10px 12px; overflow-x: auto; line-height: 1.6; margin: 8px 0; }
+/* 来源卡:波形风格 */
+.sources-wrap { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.src-toggle {
+  font-family: var(--mono); font-size: 11px; color: var(--ink-dim); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; transition: color .2s;
+  background: none; border: none;
+}
+.src-toggle:hover { color: var(--signal); }
+.src-toggle .arrow { display: inline-block; transition: transform .25s; }
+.sources-wrap.open .arrow { transform: rotate(90deg); }
+.src-list { display: none; margin-top: 10px; }
+.sources-wrap.open .src-list { display: grid; gap: 8px; animation: rise .3s ease-out; }
+.src-card {
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px;
+  background: rgba(11, 17, 28, 0.7); cursor: pointer; position: relative;
+  transition: border-color .2s, background .2s;
+}
+.src-card:hover { border-color: var(--line-strong); background: rgba(14, 21, 36, 0.9); }
+.src-card .src-head { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; }
+.src-card .src-idx { color: var(--signal); }
+.src-card .src-file { color: var(--ink-faint); }
+.src-card .src-title { font-size: 13px; font-weight: 700; margin-top: 5px; color: var(--ink); }
+.src-card .src-snippet { font-size: 12px; color: var(--ink-dim); line-height: 1.6; margin-top: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* 等待打字动画 */
+.typing { display: inline-flex; align-items: center; gap: 5px; padding: 4px 0; }
+.typing i { width: 5px; height: 5px; border-radius: 50%; background: var(--signal); animation: blink 1.2s infinite; }
+.typing i:nth-child(2) { animation-delay: .2s; }
+.typing i:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .2; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.thinking-line { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-bottom: 10px; letter-spacing: .5px; }
+/* 输入区 */
+footer {
+  flex-shrink: 0; padding: 14px 24px 18px;
+  background: linear-gradient(transparent, var(--bg) 30%);
+}
+.input-shell {
+  max-width: 780px; margin: 0 auto;
+  display: flex; gap: 10px; align-items: flex-end;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 16px; padding: 8px 8px 8px 18px;
+  transition: border-color .25s, box-shadow .25s;
+  box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.8);
+}
+.input-shell:focus-within { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(94, 234, 212, 0.06), 0 20px 50px -20px rgba(0, 0, 0, 0.8); }
+#q {
+  flex: 1; background: none; border: none; outline: none; resize: none;
+  color: var(--ink); font-family: var(--sans); font-size: 14.5px; line-height: 1.6;
+  padding: 8px 0; max-height: 120px;
+}
+#q::placeholder { color: var(--ink-faint); }
+#send {
+  border: none; cursor: pointer; height: 40px; min-width: 86px;
+  border-radius: 11px; background: var(--signal);
+  color: #06231c; font-weight: 800; font-size: 14px; letter-spacing: 1px;
+  transition: transform .15s, box-shadow .2s, opacity .2s;
+  box-shadow: 0 6px 24px -8px rgba(94, 234, 212, 0.55);
+}
+#send:hover { transform: translateY(-1px); }
+#send:active { transform: translateY(0); }
+#send:disabled { opacity: 0.45; cursor: wait; box-shadow: none; }
+.hint { max-width: 780px; margin: 8px auto 0; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); letter-spacing: .4px; }
+/* 错误提示 */
+.error { color: var(--danger) !important; }
+/* 响应式 */
+@media (max-width: 720px) {
+  .suggests { grid-template-columns: 1fr; }
+  header { padding: 0 16px; }
+  .chip, .stat .label { display: none; }
+  .thread { padding: 20px 14px 8px; }
+  .msg .avatar { display: none; }
+  .empty .big { font-size: 24px; }
+  footer { padding: 10px 12px 14px; }
+}
+</style>
 </head>
 <body>
+<div class="bg-grid"></div>
+
+<div class="app">
   <header>
-    <h1>💼 Java 面试知识库问答</h1>
-    <span class="badge">RAG · DeepSeek</span>
+    <div class="logo-mark">Q</div>
+    <h1>QueryBase <em>·</em> Java 面试知识库</h1>
+    <div class="chips">
+      <span class="chip">RAG</span>
+      <span class="chip">BM25</span>
+      <span class="chip">BGE</span>
+      <span class="chip">DeepSeek</span>
+    </div>
+    <div class="stat"><span class="dot"></span><span class="label">索引在线 · 20 docs</span></div>
   </header>
 
-  <div id="chat">
-    <div class="msg assistant">你好!我是基于 RAG 技术的 Java 面试知识库助手。<br>你可以问我任何 Java 相关的问题,比如:<br>• Spring 事务什么时候会失效?<br>• HashMap 底层是怎么实现的?<br>• 什么是缓存雪崩?</div>
-  </div>
+  <main id="chat">
+    <div class="thread" id="thread"></div>
+  </main>
 
-  <div id="input-bar">
-    <input id="q" type="text" placeholder="输入你的 Java 问题... (Enter 发送)" autocomplete="off">
-    <button id="send">发送</button>
-  </div>
+  <footer>
+    <div class="input-shell">
+      <textarea id="q" rows="1" placeholder="输入你的 Java 面试问题… ( Enter 发送 / Shift+Enter 换行 )" autocomplete="off"></textarea>
+      <button id="send">发送</button>
+    </div>
+    <div class="hint">§ 回答基于知识库检索生成 · 点击来源卡片可查看原文片段</div>
+  </footer>
+</div>
 
-  <script>
-    const chat = document.getElementById('chat');
-    const input = document.getElementById('q');
-    const sendBtn = document.getElementById('send');
+<script>
+const thread = document.getElementById('thread');
+const input = document.getElementById('q');
+const sendBtn = document.getElementById('send');
+const SUGGESTS = [
+  'Spring 事务什么时候会失效?',
+  'HashMap 底层是怎么实现的?',
+  '什么是缓存雪崩?',
+];
 
-    function appendMsg(role, text, sources) {
-      const div = document.createElement('div');
-      div.className = 'msg ' + role;
-      div.textContent = text;
-      if (sources && sources.length) {
-        const src = document.createElement('div');
-        src.className = 'sources';
-        src.textContent = '📚 参考来源: ';
-        sources.forEach(s => {
-          const span = document.createElement('span');
-          span.textContent = s;
-          src.appendChild(span);
-        });
-        div.appendChild(src);
-      }
-      chat.appendChild(div);
-      chat.scrollTop = chat.scrollHeight;
-      return div;
-    }
+function renderEmpty() {
+  thread.innerHTML = `
+    <div class="empty">
+      <div class="kicker">▍Retrieval Augmented Generation</div>
+      <div class="big">向你的 <span class="grad">Java 知识库</span><br>发起一次检索</div>
+      <div class="sub">20 篇高频面试题 · 混合检索 · 回答带出处</div>
+      <div class="suggests">
+        ${SUGGESTS.map((s, i) => `<button class="sug-card"><span class="idx">Q${i + 1}</span>${s}</button>`).join('')}
+      </div>
+    </div>`;
+  thread.querySelectorAll('.sug-card').forEach((el, i) => {
+    el.onclick = () => send(SUGGESTS[i]);
+  });
+}
 
-    async function send() {
-      const question = input.value.trim();
-      if (!question) return;
-      input.value = '';
-      sendBtn.disabled = true;
+function scrollBottom() { chat.scrollTop = chat.scrollHeight; }
 
-      appendMsg('user', question);
-      const loading = appendMsg('assistant', '正在检索知识库并生成回答');
-      loading.classList.add('typing');
+function addMsg(role, html) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + (role === 'user' ? 'user' : 'ai');
+  wrap.innerHTML = `
+    <div class="avatar">${role === 'user' ? 'U' : 'AI'}</div>
+    <div class="bubble">${html}</div>`;
+  thread.appendChild(wrap);
+  scrollBottom();
+  return wrap.querySelector('.bubble');
+}
 
-      try {
-        const resp = await fetch('/api/ask', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, top_k: 3 }),
-        });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const data = await resp.json();
-        loading.classList.remove('typing');
-        loading.textContent = data.answer;
-        const src = document.createElement('div');
-        src.className = 'sources';
-        src.textContent = '📚 参考来源: ';
-        data.sources.forEach(s => {
-          const span = document.createElement('span');
-          span.textContent = s;
-          src.appendChild(span);
-        });
-        loading.appendChild(src);
-      } catch (e) {
-        loading.classList.remove('typing');
-        loading.textContent = '请求失败: ' + e.message + '(请确认后端服务已启动)';
-      } finally {
-        sendBtn.disabled = false;
-        input.focus();
-      }
-    }
+function renderSources(bubble, sources) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sources-wrap';
+  wrap.innerHTML = `
+    <button class="src-toggle"><span class="arrow">▸</span> 查看 ${sources.length} 个参考来源</button>
+    <div class="src-list">
+      ${sources.map((s, i) => `
+        <div class="src-card">
+          <div class="src-head"><span class="src-idx">[REF ${i + 1}]</span><span class="src-file">${s.file || '知识库'}</span></div>
+          <div class="src-title">${s.title || '未命名来源'}</div>
+          <div class="src-snippet">${s.snippet || ''}</div>
+        </div>`).join('')}
+    </div>`;
+  bubble.appendChild(wrap);
+  const toggle = wrap.querySelector('.src-toggle');
+  toggle.onclick = () => wrap.classList.toggle('open');
+}
 
-    sendBtn.onclick = send;
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+function markdownish(text) {
+  // 极简渲染:加粗、代码块、行内代码、换行 —— 足够美观且不引入依赖
+  const esc = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const codeBlocks = [];
+  let t = esc.replace(/```([\s\S]*?)```/g, (_, c) => {
+    codeBlocks.push('<pre>' + c.trim() + '</pre>'); return '\x00' + (codeBlocks.length - 1) + '\x00';
+  });
+  t = t.replace(/`([^`]+)`/g, '<code>$1</code>')
+       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+       .replace(/^#{1,4}\s+(.+)$/gm, '<strong style="font-size:15px;display:block;margin:10px 0 4px;">$1</strong>')
+       .replace(/^- (.+)$/gm, '• $1');
+  t = t.replace(/\x00(\d+)\x00/g, (_, i) => codeBlocks[+i]);
+  return t.replace(/\n/g, '<br>');
+}
+
+async function send(question) {
+  if (!question) return;
+  input.value = '';
+  input.style.height = 'auto';
+  sendBtn.disabled = true;
+
+  addMsg('user', esc(question));
+  const bubble = addMsg('ai', `
+    <div class="thinking-line">▍retrieving · ranking · generating</div>
+    <span class="typing"><i></i><i></i><i></i></span>`);
+
+  try {
+    const resp = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, top_k: 3 }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || ('HTTP ' + resp.status));
+    bubble.innerHTML = markdownish(data.answer);
+    if (data.sources && data.sources.length) renderSources(bubble, data.sources);
+  } catch (e) {
+    bubble.innerHTML = `<span class="error">✕ 请求失败: ${esc(e.message)}</span>`;
+  } finally {
+    sendBtn.disabled = false;
     input.focus();
-  </script>
+  }
+}
+
+function esc(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+sendBtn.onclick = () => send(input.value.trim());
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input.value.trim()); }
+});
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+});
+renderEmpty();
+input.focus();
+</script>
 </body>
 </html>

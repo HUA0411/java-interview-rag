@@ -41,9 +41,15 @@ class AskRequest(BaseModel):
     top_k: int = 3
 
 
+class Source(BaseModel):
+    title: str
+    file: str
+    snippet: str
+
+
 class AskResponse(BaseModel):
     answer: str
-    sources: list[str]
+    sources: list[Source]
 
 
 @app.get("/api/health")
@@ -69,7 +75,16 @@ def ask(req: AskRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"大模型调用失败: {e}")
 
-    return AskResponse(answer=answer, sources=[h["title"] for h in hits])
+    # 来源详情:标题、源文件、内容片段(前端展示可点击的来源卡片)
+    sources = [
+        Source(
+            title=h["title"],
+            file=h["id"].split(":")[0] if ":" in h["id"] else h["id"],
+            snippet=h["text"][:120],
+        )
+        for h in hits
+    ]
+    return AskResponse(answer=answer, sources=sources)
 
 
 # 静态前端页面(同源托管,无跨域问题)
