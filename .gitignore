@@ -1,0 +1,12 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 环境变量与密钥(绝不提交)
+.env
+*.key
+*.pem
+
+# 运行产物
+data/vectorstore/
