@@ -1,6 +1,6 @@
 """
 步骤1: 文档解析 + 切分
-输入: data/java_questions/ 下的 .md 或 .pdf 文档
+输入: data/java_questions/ 下的 .md 或 .pdf 文档(任意领域,知识库不关心内容)
 输出: data/chunks.json —— 切分好的文本块列表 [{id, title, text, source}]
 
 为什么这样切:
@@ -20,6 +20,20 @@ OUTPUT = DATA_DIR / "chunks.json"
 CHUNK_SIZE = 400      # 每块目标字符数
 CHUNK_OVERLAP = 50    # 相邻块重叠字符数
 MIN_CHUNK_LEN = 20    # 过滤过短的杂质块(如纯标题、空行)
+
+
+def parse_pdf(path: Path) -> list[dict]:
+    """PDF 解析:按页提取文本,每页作为一个 section(标题为页码)"""
+    import fitz  # PyMuPDF
+
+    sections = []
+    doc = fitz.open(path)
+    for page_num in range(len(doc)):
+        text = doc[page_num].get_text().strip()
+        if text:
+            sections.append({"title": f"第{page_num + 1}页", "content": text})
+    doc.close()
+    return sections
 
 
 def parse_markdown(text: str) -> list[dict]:
@@ -72,9 +86,13 @@ def split_long_section(title: str, content: str, source: str) -> list[dict]:
 def main():
     all_chunks = []
 
-    for md_file in sorted(QUESTION_DIR.glob("*.md")):
-        print(f"解析 {md_file.name} ...")
-        sections = parse_markdown(md_file.read_text(encoding="utf-8"))
+    for doc_file in sorted(list(QUESTION_DIR.glob("*.md")) + list(QUESTION_DIR.glob("*.pdf"))):
+        print(f"解析 {doc_file.name} ...")
+        if doc_file.suffix.lower() == ".pdf":
+            sections = parse_pdf(doc_file)
+        else:
+            sections = parse_markdown(doc_file.read_text(encoding="utf-8"))
+        md_file = doc_file
         for sec in sections:
             content = sec["content"].strip()
             # 数据清洗:跳过纯标题、空内容等杂质块
