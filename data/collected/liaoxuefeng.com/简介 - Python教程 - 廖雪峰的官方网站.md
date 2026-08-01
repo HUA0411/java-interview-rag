@@ -2,7 +2,6 @@
 
 > 来源: https://liaoxuefeng.com/books/python/introduction/
 
-
 ## Python教程
 这是小白的Python新手教程，具有如下特点：
 

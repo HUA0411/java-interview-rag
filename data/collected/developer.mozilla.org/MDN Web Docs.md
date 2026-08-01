@@ -2,7 +2,6 @@
 
 > 来源: https://developer.mozilla.org/zh-CN/
 
-
 ## 开发者的资源， 由开发者打造
 自 2005 年以来，持续记录 CSS 、 HTML 和 JavaScript 。
 - Blog Celebrating 20 years of MDN MDN turns 20! Let's look at how we started, how MDN became the most trusted resource for web developers, the impact it's had on the open web, and yes, there's cake, too.

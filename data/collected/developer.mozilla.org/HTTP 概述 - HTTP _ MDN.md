@@ -75,7 +75,7 @@ Accept-Ranges: bytes
 Content-Length: 29769
 Content-Type: text/html
 
-<!DOCTYPE html>…（此处是所请求网页的 29769 字节）
+…（此处是所请求网页的 29769 字节）
 读取服务端返回的报文信息：
 
 ```
@@ -88,7 +88,7 @@ Accept-Ranges: bytes
 Content-Length: 29769
 Content-Type: text/html
 
-<!DOCTYPE html>…（此处是所请求网页的 29769 字节）
+…（此处是所请求网页的 29769 字节）
 
 ```
 - 关闭连接或者为后续请求重用连接。
