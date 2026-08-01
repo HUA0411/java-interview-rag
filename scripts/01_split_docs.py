@@ -14,8 +14,10 @@ import re
 from pathlib import Path
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-QUESTION_DIR = DATA_DIR / "java_questions"
 OUTPUT = DATA_DIR / "chunks.json"
+
+# 知识库来源目录:手工文档 + 爬虫采集,都会进入切分
+SOURCE_DIRS = [DATA_DIR / "java_questions", DATA_DIR / "collected"]
 
 CHUNK_SIZE = 400      # 每块目标字符数
 CHUNK_OVERLAP = 50    # 相邻块重叠字符数
@@ -85,14 +87,20 @@ def split_long_section(title: str, content: str, source: str) -> list[dict]:
 
 def main():
     all_chunks = []
+    doc_files = []
+    for src_dir in SOURCE_DIRS:
+        if src_dir.exists():
+            # rglob 递归:collected/ 下有按域名分的子目录
+            doc_files += list(src_dir.rglob("*.md")) + list(src_dir.rglob("*.pdf"))
 
-    for doc_file in sorted(list(QUESTION_DIR.glob("*.md")) + list(QUESTION_DIR.glob("*.pdf"))):
-        print(f"解析 {doc_file.name} ...")
+    for doc_file in sorted(doc_files):
+        print(f"解析 {doc_file} ...")
         if doc_file.suffix.lower() == ".pdf":
             sections = parse_pdf(doc_file)
         else:
             sections = parse_markdown(doc_file.read_text(encoding="utf-8"))
-        md_file = doc_file
+        # 来源标识:目录名/文件名,区分手工文档与不同爬虫来源
+        source = f"{doc_file.parent.name}/{doc_file.name}"
         for sec in sections:
             content = sec["content"].strip()
             # 数据清洗:跳过纯标题、空内容等杂质块
@@ -101,14 +109,14 @@ def main():
             if len(content) <= CHUNK_SIZE:
                 # 短小节:整块保留
                 all_chunks.append({
-                    "id": f"{md_file.name}:{sec['title']}:0",
+                    "id": f"{source}:{sec['title']}:0",
                     "title": sec["title"],
                     "text": content,
-                    "source": md_file.name,
+                    "source": source,
                 })
             else:
                 # 长小节:二次切分
-                all_chunks.extend(split_long_section(sec["title"], content, md_file.name))
+                all_chunks.extend(split_long_section(sec["title"], content, source))
 
     OUTPUT.parent.mkdir(exist_ok=True)
     OUTPUT.write_text(json.dumps(all_chunks, ensure_ascii=False, indent=2), encoding="utf-8")
