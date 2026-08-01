@@ -113,10 +113,16 @@ class HybridSearcher:
         return [v["item"] for v in fused]
 
     def search(self, query: str, top_k: int = TOP_K):
-        """混合检索入口:向量 + BM25 → RRF 融合 → top_k"""
+        """混合检索入口:向量 + BM25 → RRF 融合 → top_k
+        每个结果补充 similarity(向量相似度,0~1),供置信度计算"""
         vector_hits = self._vector_search(query, top_k=top_k * 2)
         bm25_hits = self._bm25_search(query, top_k=top_k * 2)
-        return self._rrf_fuse(vector_hits, bm25_hits)[:top_k]
+        fused = self._rrf_fuse(vector_hits, bm25_hits)[:top_k]
+        # 补上向量相似度(置信度依据):最相关的那个块的相似度 ≈ 回答可信度
+        sim_map = {h["id"]: h["score"] for h in vector_hits}
+        for h in fused:
+            h["similarity"] = sim_map.get(h["id"], 0.0)
+        return fused
 
 
 def demo():

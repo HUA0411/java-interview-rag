@@ -24,18 +24,33 @@ def load_env():
             os.environ.setdefault(k.strip(), v.strip())
 
 
-def build_prompt(question: str, hits: list[dict]) -> str:
-    """组装 prompt:资料带编号引用,强制基于资料回答(防幻觉)"""
+def build_prompt(question: str, hits: list[dict], history: list[dict] | None = None) -> str:
+    """
+    组装 prompt:对话历史 + 参考资料 + 当前问题
+    history: [{"role": "user"|"assistant", "content": "..."}] 最近几轮对话(短期记忆)
+    """
     refs = "\n\n".join(
         f"[参考资料{i + 1} | 标题:{hit['title']}]\n{hit['text']}"
         for i, hit in enumerate(hits)
     )
+
+    # 对话历史:让模型记得上文(如"刚才那个问题里说的接口是什么")
+    history_block = ""
+    if history:
+        lines = []
+        for msg in history:
+            who = "用户" if msg["role"] == "user" else "助手"
+            lines.append(f"{who}: {msg['content'][:400]}")
+        history_block = f"【对话历史】\n{chr(10).join(lines)}\n\n"
+
     return (
         "你是 Java 面试辅导助手。请严格基于以下参考资料回答用户问题。\n"
         "规则:\n"
         "1. 只使用参考资料中的信息,不要编造资料里没有的内容\n"
         "2. 如果参考资料不足以回答,请明确说明'资料中没有找到相关信息'\n"
-        "3. 回答时如果引用了某份资料,用 [参考资料N] 标注\n\n"
+        "3. 回答时如果引用了某份资料,用 [参考资料N] 标注(编号仅对本次参考资料有效)\n"
+        "4. 对话历史中用户提到的上文问题,结合当前问题一并理解\n\n"
+        f"{history_block}"
         f"【参考资料】\n{refs}\n\n"
         f"【用户问题】\n{question}"
     )

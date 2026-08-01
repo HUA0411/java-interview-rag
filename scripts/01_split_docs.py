@@ -118,6 +118,11 @@ def main():
                 # 长小节:二次切分
                 all_chunks.extend(split_long_section(sec["title"], content, source))
 
+    # id 必须全局唯一:同一文档内可能出现重复标题(如多个"实例代码"小节),
+    # 用全局序号保证唯一性(ChromaDB 按 id upsert,重复 id 会报错)
+    for i, chunk in enumerate(all_chunks):
+        chunk["id"] = f"{chunk['source']}:{chunk['title']}:{i}"
+
     OUTPUT.parent.mkdir(exist_ok=True)
     OUTPUT.write_text(json.dumps(all_chunks, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"完成!共生成 {len(all_chunks)} 个文本块,保存到 {OUTPUT}")

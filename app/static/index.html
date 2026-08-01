@@ -237,7 +237,7 @@ footer {
       <span class="chip">BGE</span>
       <span class="chip">DeepSeek</span>
     </div>
-    <div class="stat"><span class="dot"></span><span class="label">索引在线 · 20 docs</span></div>
+    <div class="stat"><span class="dot"></span><span class="label" id="stat-docs">索引在线</span></div>
   </header>
 
   <main id="chat">
@@ -268,7 +268,7 @@ function renderEmpty() {
     <div class="empty">
       <div class="kicker">▍Retrieval Augmented Generation</div>
       <div class="big">向你的 <span class="grad">Java 知识库</span><br>发起一次检索</div>
-      <div class="sub">20 篇高频面试题 · 混合检索 · 回答带出处</div>
+      <div class="sub" id="stat-sub">知识库 · 混合检索 · 回答带出处</div>
       <div class="suggests">
         ${SUGGESTS.map((s, i) => `<button class="sug-card"><span class="idx">Q${i + 1}</span>${s}</button>`).join('')}
       </div>
@@ -324,6 +324,36 @@ function markdownish(text) {
   return t.replace(/\n/g, '<br>');
 }
 
+// ---------- 会话记忆 ----------
+let sessionId = sessionStorage.getItem('rag_session') || null;
+
+function renderConfidence(bubble, value) {
+  // 置信度徽章:基于检索相似度,三档显示
+  const pct = Math.round(value * 100);
+  const level = value >= 0.5 ? ['高', 'var(--signal-2)'] : value >= 0.35 ? ['中', 'var(--amber)'] : ['低', 'var(--danger)'];
+  const badge = document.createElement('div');
+  badge.style.cssText = `display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;
+    color:${level[1]};border:1px solid ${level[1]}55;border-radius:999px;padding:2px 10px;margin-bottom:10px;letter-spacing:.5px;`;
+  badge.innerHTML = `置信度 ${pct}% · ${level[0]}`;
+  bubble.prepend(badge);
+}
+
+async function restoreSession() {
+  // 页面刷新后:恢复会话历史与消息记录
+  if (!sessionId) return;
+  try {
+    const resp = await fetch('/api/session/' + sessionId);
+    if (!resp.ok) { sessionStorage.removeItem('rag_session'); sessionId = null; return; }
+    const data = await resp.json();
+    if (!data.history || !data.history.length) return;
+    thread.innerHTML = '';
+    data.history.forEach((m, i) => {
+      if (m.role === 'user') addMsg('user', esc(m.content));
+      else addMsg('ai', `<div class="answer">${markdownish(m.content)}</div>`);
+    });
+  } catch (e) { /* 恢复失败不阻塞使用 */ }
+}
+
 async function send(question) {
   if (!question) return;
   input.value = '';
@@ -341,7 +371,7 @@ async function send(question) {
     const resp = await fetch('/api/ask/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, top_k: 3 }),
+      body: JSON.stringify({ question, top_k: 3, session_id: sessionId }),
     });
     if (!resp.ok) throw new Error(('HTTP ' + resp.status));
     if (!resp.body) throw new Error('当前浏览器不支持流式读取');
@@ -353,6 +383,7 @@ async function send(question) {
     let answerText = '';
     let firstDelta = true;
     let sources = null;
+    let confShown = false;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -368,12 +399,17 @@ async function send(question) {
         let ev;
         try { ev = JSON.parse(raw.slice(6)); } catch { continue; }
 
-        if (ev.type === 'sources') {
+        if (ev.type === 'session' && ev.session_id) {
+          sessionId = ev.session_id;
+          sessionStorage.setItem('rag_session', sessionId);
+        } else if (ev.type === 'sources') {
           sources = ev.sources;
-          // 来源先到:渲染来源面板,回答继续打字
           const line = bubble.querySelector('.thinking-line');
           if (line) line.textContent = '▍generating · streaming';
           if (sources && sources.length) renderSources(bubble, sources);
+        } else if (ev.type === 'confidence' && !confShown) {
+          renderConfidence(bubble, ev.value);
+          confShown = true;
         } else if (ev.type === 'delta') {
           if (firstDelta) {
             bubble.querySelector('.typing')?.remove();
@@ -416,7 +452,15 @@ input.addEventListener('input', () => {
   input.style.height = Math.min(input.scrollHeight, 120) + 'px';
 });
 renderEmpty();
+restoreSession();   // 刷新页面恢复多轮对话
 input.focus();
+
+// 动态拉取索引统计
+fetch('/api/health').then(r => r.json()).then(d => {
+  document.getElementById('stat-docs').textContent = `索引在线 · ${d.docs_in_index} docs`;
+  const sub = document.getElementById('stat-sub');
+  if (sub) sub.textContent = `${d.docs_in_index} 个知识块 · 混合检索 · 回答带出处`;
+}).catch(() => {});
 </script>
 </body>
 </html>
